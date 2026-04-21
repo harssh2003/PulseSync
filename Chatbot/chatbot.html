@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulse - AI Health Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f3f4f6;
+            --text-primary: #111827;
+            --text-secondary: #4b5563;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #eff6ff;
+        }
+
+        html.dark {
+            --bg-primary: #1f2937;
+            --bg-secondary: #374151;
+            --text-primary: #f9fafb;
+            --text-secondary: #d1d5db;
+            --accent-primary: #60a5fa;
+            --accent-secondary: #1e40af;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        #chatbox::-webkit-scrollbar { width: 6px; }
+        #chatbox::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        #chatbox::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        #chatbox::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .bot-message, .user-message {
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeIn 0.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .dot-flashing {
+            position: relative;
+            width: 8px; height: 8px;
+            border-radius: 5px;
+            background-color: var(--text-secondary);
+            color: var(--text-secondary);
+            animation: dotFlashing 1s infinite linear alternate;
+            animation-delay: .5s;
+        }
+
+        .dot-flashing::before, .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+        }
+
+        .dot-flashing::before {
+            left: -12px; width: 8px; height: 8px;
+            border-radius: 5px;
+            background-color: var(--text-secondary);
+            color: var(--text-secondary);
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 0s;
+        }
+
+        .dot-flashing::after {
+            left: 12px; width: 8px; height: 8px;
+            border-radius: 5px;
+            background-color: var(--text-secondary);
+            color: var(--text-secondary);
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 1s;
+        }
+
+        @keyframes dotFlashing {
+            0% { background-color: var(--text-secondary); }
+            50%, 100% { background-color: var(--text-primary); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen">
+
+    <div id="chat-container" class="w-full max-w-2xl h-[95vh] flex flex-col bg-[var(--bg-primary)] rounded-2xl shadow-2xl">
+        <div class="bg-[var(--bg-primary)] p-4 rounded-t-2xl shadow-md flex items-center justify-between border-b border-[var(--bg-secondary)]">
+            <div class="flex items-center">
+                <div class="w-12 h-12 bg-[var(--accent-secondary)] rounded-full flex items-center justify-center mr-4">
+                    <svg class="w-6 h-6 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-[var(--text-primary)]">Pulse</h1>
+                    <p class="text-[var(--text-secondary)] text-sm">Your AI Health Assistant</p>
+                </div>
+            </div>
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-[var(--bg-secondary)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--accent-primary)] focus:ring-offset-[var(--bg-primary)]">
+                <svg id="theme-icon-light" class="w-6 h-6 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                <svg id="theme-icon-dark" class="w-6 h-6 text-[var(--text-secondary)] hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+            </button>
+        </div>
+
+        <div id="chatbox" class="flex-1 p-6 overflow-y-auto bg-[var(--bg-secondary)]">
+
+        </div>
+        <div class="p-4 border-t border-[var(--bg-secondary)] bg-[var(--bg-primary)] rounded-b-2xl">
+            <div class="flex items-center space-x-3">
+                <input type="text" id="userInput" class="w-full px-4 py-3 border-none rounded-xl bg-[var(--bg-secondary)] text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]" placeholder="Tell me about your symptoms..." autocomplete="off">
+                <button id="sendBtn" class="bg-[var(--accent-primary)] text-white p-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const chatbox = document.getElementById('chatbox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIconLight = document.getElementById('theme-icon-light');
+    const themeIconDark = document.getElementById('theme-icon-dark');
+    const geminiApiKey = 'AIzaSyDijK358zeS_FjNPuM3MSDkepzRstIX9dM'; 
+
+    let chatHistory = [];
+
+    const systemInstruction = {
+        role: "system",
+        parts: [{
+            text: `You are 'Pulse', a friendly, empathetic, and cautious AI healthcare assistant.
+            Your primary goal is to help users understand their symptoms by asking clarifying follow-up questions.
+            RULES:
+            1. NEVER PROVIDE A DIAGNOSIS. 
+            2. ASK FOLLOW-UP QUESTIONS and explain possibilities.
+            3. SUGGEST SPECIALISTS and prioritize urgency.
+            4. FORMAT with HTML.`
+        }]
+    };
+
+    const addMessage = (sender, messageHtml) => {
+        const messageWrapper = document.createElement('div');
+        messageWrapper.className = `flex mb-4 ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+        
+        const messageElement = document.createElement('div');
+        messageElement.className = `${sender === 'user' 
+            ? 'bg-[var(--accent-primary)] text-white' 
+            : 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'} 
+            rounded-2xl p-3 max-w-md 
+            ${sender === 'user' ? 'user-message rounded-br-none' : 'bot-message rounded-bl-none'}`;
+        
+        messageElement.innerHTML = messageHtml;
+        
+        messageWrapper.appendChild(messageElement);
+        chatbox.appendChild(messageWrapper);
+        chatbox.scrollTop = chatbox.scrollHeight;
+    };
+
+    const showLoadingIndicator = () => {
+        const loadingElement = `
+            <div class="flex mb-4 justify-start" id="loading-indicator">
+                <div class="bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm rounded-2xl p-4 max-w-xs rounded-bl-none flex items-center space-x-2">
+                    <div class="dot-flashing"></div>
+                </div>
+            </div>
+        `;
+        chatbox.innerHTML += loadingElement;
+        chatbox.scrollTop = chatbox.scrollHeight;
+    };
+
+    const removeLoadingIndicator = () => {
+        const indicator = document.getElementById('loading-indicator');
+        if (indicator) indicator.remove();
+    };
+
+    const handleUserMessage = async () => {
+        const userText = userInput.value.trim();
+        if (!userText) return;
+
+        addMessage('user', userText);
+        userInput.value = '';
+        sendBtn.disabled = true;
+
+        chatHistory.push({ role: 'user', parts: [{ text: userText }] });
+
+        showLoadingIndicator();
+        await getGeminiResponse();
+        sendBtn.disabled = false;
+    };
+
+    const getGeminiResponse = async () => {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+
+        const payload = {
+            contents: chatHistory,
+            systemInstruction: systemInstruction
+        };
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const botResponse = data.candidates[0].content.parts[0].text;
+
+            chatHistory.push({ role: 'model', parts: [{ text: botResponse }] });
+            removeLoadingIndicator();
+            addMessage('bot', botResponse);
+
+        } catch (error) {
+            console.error("Error calling Gemini API:", error);
+            removeLoadingIndicator();
+            addMessage('bot', "<p>I'm sorry, I'm having trouble connecting right now. Please try again.</p>");
+        }
+    };
+    
+    const applyTheme = (theme) => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            themeIconLight.classList.add('hidden');
+            themeIconDark.classList.remove('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            themeIconLight.classList.remove('hidden');
+            themeIconDark.classList.add('hidden');
+        }
+    };
+    
+    themeToggle.addEventListener('click', () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        const newTheme = isDark ? 'light' : 'dark';
+        localStorage.setItem('theme', newTheme);
+        applyTheme(newTheme);
+    });
+
+    sendBtn.addEventListener('click', handleUserMessage);
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleUserMessage();
+    });
+    
+    const initializeApp = () => {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        applyTheme(savedTheme);
+        
+        setTimeout(() => {
+            const welcomeMessage = `
+                <p>Hello! I'm <b>Pulse</b>, your AI health assistant.</p>
+                <p class="mt-2">Please describe your symptoms, and I'll do my best to guide you.</p>
+                <p class="mt-4 text-xs text-[var(--text-secondary)]"><b>Disclaimer:</b> I am an AI assistant, not a medical professional. Always consult a doctor for serious health concerns.</p>
+            `;
+            addMessage('bot', welcomeMessage);
+            chatHistory.push({ role: 'model', parts: [{ text: welcomeMessage }] });
+        }, 500);
+    };
+    
+    document.addEventListener('DOMContentLoaded', initializeApp);
+</script>
+
+</body>
+</html>
