@@ -21,6 +21,19 @@ interface Appointment {
   reason:           string
   notes:            string
   status:           "pending" | "confirmed" | "completed" | "cancelled"
+  reschedule_reason?:  string
+  reschedule_history?: Array<{ previous_date: string; previous_time: string; reason: string; rescheduled_at: string }>
+}
+
+interface AvailSlot {
+  time: string
+  end: string
+  available: boolean
+}
+
+interface AvailDateEntry {
+  date: string
+  slots: AvailSlot[]
 }
 
 // ── Status badge ───────────────────────────────────────────────────────────
@@ -44,10 +57,14 @@ function AppointmentCard({
   appointment,
   isPast = false,
   onCancel,
+  onReschedule,
+  onDelete,
 }: {
   appointment: Appointment
   isPast?: boolean
   onCancel?: () => void
+  onReschedule?: () => void
+  onDelete?: () => void
 }) {
   const formattedDate = appointment.appointment_date
     ? new Date(appointment.appointment_date + "T00:00:00").toLocaleDateString("en-IN", {
@@ -102,13 +119,43 @@ function AppointmentCard({
         </div>
       )}
 
+      {/* Reschedule info */}
+      {appointment.reschedule_reason && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          <p className="text-xs font-semibold text-amber-700">🔄 Rescheduled</p>
+          <p className="text-xs text-amber-600 mt-0.5">Reason: {appointment.reschedule_reason}</p>
+        </div>
+      )}
+
       {/* Actions */}
-      {!isPast && appointment.status !== "cancelled" && appointment.status !== "completed" && onCancel && (
+      {!isPast && appointment.status !== "cancelled" && appointment.status !== "completed" && (
+        <div className="flex gap-2 mt-1">
+          {onReschedule && (
+            <button
+              onClick={onReschedule}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+            >
+              ✏️ Reschedule
+            </button>
+          )}
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Delete button for cancelled appointments */}
+      {appointment.status === "cancelled" && onDelete && (
         <button
-          onClick={onCancel}
-          className="mt-1 w-full py-2 rounded-xl text-sm font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all"
+          onClick={onDelete}
+          className="mt-1 w-full py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all"
         >
-          Cancel Appointment
+          🗑️ Delete
         </button>
       )}
     </div>
@@ -127,6 +174,14 @@ export default function AppointmentBooking({ onNavigate }: AppointmentBookingPro
   // Cancel confirmation modal
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState("")
+  // Reschedule modal state
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null)
+  const [rescheduleReason, setRescheduleReason] = useState("")
+  const [rescheduleDate, setRescheduleDate] = useState("")
+  const [rescheduleSlot, setRescheduleSlot] = useState<AvailSlot | null>(null)
+  const [rescheduleAvailDates, setRescheduleAvailDates] = useState<AvailDateEntry[]>([])
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false)
+  const [isRescheduling, setIsRescheduling] = useState(false)
 
   const getToken = () =>
     typeof window !== "undefined" ? localStorage.getItem("auth_token") ?? "" : ""
@@ -199,6 +254,107 @@ export default function AppointmentBooking({ onNavigate }: AppointmentBookingPro
       fetchAppointments()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to cancel appointment")
+      setTimeout(() => setError(null), 5000)
+    }
+  }
+
+  // ── Reschedule flow ─────────────────────────────────────────────────────
+  const openRescheduleModal = async (apt: Appointment) => {
+    setRescheduleTarget(apt)
+    setRescheduleReason("")
+    setRescheduleDate("")
+    setRescheduleSlot(null)
+    setRescheduleAvailDates([])
+
+    // Fetch available slots for this doctor
+    const token = getToken()
+    try {
+      setIsLoadingSlots(true)
+      const res = await fetch(
+        `${API_BASE_URL}/appointments/availability/hospital/${apt.doctor_id}/slots`,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+      )
+      if (!res.ok) throw new Error("Failed to fetch availability")
+      const data = await res.json()
+      const availabilities = data.availabilities ?? []
+
+      // Build date → available-slots map, filtering past dates and booked slots
+      const today = new Date().toISOString().split("T")[0]
+      const dateEntries: AvailDateEntry[] = availabilities
+        .filter((a: any) => a.date >= today && a.is_available)
+        .map((a: any) => ({
+          date: a.date,
+          slots: (a.slots ?? []).filter((s: AvailSlot) => s.available),
+        }))
+        .filter((d: AvailDateEntry) => d.slots.length > 0)
+        .sort((a: AvailDateEntry, b: AvailDateEntry) => a.date.localeCompare(b.date))
+
+      setRescheduleAvailDates(dateEntries)
+    } catch (err) {
+      console.error("[Reschedule] Error fetching slots:", err)
+      setError("Failed to load available slots for rescheduling.")
+      setTimeout(() => setError(null), 5000)
+    } finally {
+      setIsLoadingSlots(false)
+    }
+  }
+
+  const confirmReschedule = async () => {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleSlot || !rescheduleReason.trim()) return
+    const token = getToken()
+    try {
+      setIsRescheduling(true)
+      const res = await fetch(
+        `${API_BASE_URL}/appointments/${rescheduleTarget.id}/reschedule`,
+        {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            new_date: rescheduleDate,
+            new_time: rescheduleSlot.time,
+            reschedule_reason: rescheduleReason.trim(),
+          }),
+        }
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? "Failed to reschedule appointment")
+      }
+      setSuccessMsg("Appointment rescheduled successfully!")
+      setTimeout(() => setSuccessMsg(null), 4000)
+      setRescheduleTarget(null)
+      fetchAppointments()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reschedule appointment")
+      setTimeout(() => setError(null), 5000)
+    } finally {
+      setIsRescheduling(false)
+    }
+  }
+
+  const getRescheduleDateSlots = (): AvailSlot[] => {
+    if (!rescheduleDate) return []
+    return rescheduleAvailDates.find(d => d.date === rescheduleDate)?.slots ?? []
+  }
+
+  // ── Delete flow ─────────────────────────────────────────────────────────
+  const deleteAppointment = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this cancelled appointment? This action cannot be undone.")) return
+    const token = getToken()
+    try {
+      const res = await fetch(`${API_BASE_URL}/appointments/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? "Failed to delete appointment")
+      }
+      setSuccessMsg("Appointment deleted successfully.")
+      setTimeout(() => setSuccessMsg(null), 3000)
+      fetchAppointments()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete appointment")
       setTimeout(() => setError(null), 5000)
     }
   }
@@ -305,6 +461,7 @@ export default function AppointmentBooking({ onNavigate }: AppointmentBookingPro
                 key={apt.id}
                 appointment={apt}
                 onCancel={() => openCancelModal(apt.id)}
+                onReschedule={() => openRescheduleModal(apt)}
               />
             ))
           ) : (
@@ -335,7 +492,12 @@ export default function AppointmentBooking({ onNavigate }: AppointmentBookingPro
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {pastApts.length > 0 ? (
             pastApts.map((apt) => (
-              <AppointmentCard key={apt.id} appointment={apt} isPast />
+              <AppointmentCard
+                key={apt.id}
+                appointment={apt}
+                isPast
+                onDelete={apt.status === "cancelled" ? () => deleteAppointment(apt.id) : undefined}
+              />
             ))
           ) : (
             <div className="col-span-full text-center py-16 px-5 bg-white rounded-2xl shadow-md border border-slate-200 text-slate-500">
@@ -393,6 +555,149 @@ export default function AppointmentBooking({ onNavigate }: AppointmentBookingPro
               >
                 Keep Appointment
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reschedule Modal ──────────────────────────────────────────────── */}
+      {rescheduleTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[999] flex items-start justify-center pt-24 pb-6 px-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative flex flex-col max-h-[80vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 pb-2 flex-shrink-0">
+              <div>
+                <h2
+                  className="text-2xl font-bold text-slate-900"
+                  style={{ fontFamily: "'Poppins', sans-serif" }}
+                >
+                  Reschedule Appointment
+                </h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  with <span className="font-semibold text-cyan-600">{rescheduleTarget.doctor_name}</span>
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Current: {rescheduleTarget.appointment_date} at {formatTime(rescheduleTarget.appointment_time)}
+                </p>
+              </div>
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors flex-shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto px-6 pb-6 pt-2 flex-1">
+              {/* Loading */}
+              {isLoadingSlots && (
+                <div className="text-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sky-500 mb-3" />
+                  <p className="text-sm text-slate-500">Loading available slots…</p>
+                </div>
+              )}
+
+              {!isLoadingSlots && (
+                <>
+                  {/* Date selection */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Select New Date <span className="text-red-500">*</span>
+                    </label>
+                    {rescheduleAvailDates.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {rescheduleAvailDates.map((d) => (
+                          <button
+                            key={d.date}
+                            onClick={() => { setRescheduleDate(d.date); setRescheduleSlot(null) }}
+                            className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                              rescheduleDate === d.date
+                                ? "bg-amber-500 text-white border-amber-500 shadow-md"
+                                : "bg-white text-amber-700 border-amber-200 hover:border-amber-400"
+                            }`}
+                          >
+                            {new Date(d.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                            <span className="block text-xs opacity-75 font-normal">
+                              {d.slots.length} slot{d.slots.length !== 1 ? "s" : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400 italic">No available dates found for this doctor.</p>
+                    )}
+                  </div>
+
+                  {/* Time slot selection */}
+                  {rescheduleDate && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">
+                        Select New Time <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {getRescheduleDateSlots().map((slot, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setRescheduleSlot(slot)}
+                            className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                              rescheduleSlot?.time === slot.time
+                                ? "bg-amber-500 text-white border-amber-500 shadow-md"
+                                : "bg-white text-amber-700 border-amber-200 hover:border-amber-400"
+                            }`}
+                          >
+                            {formatTime(slot.time)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reason (mandatory) */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Reason for Rescheduling <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={rescheduleReason}
+                      onChange={(e) => setRescheduleReason(e.target.value)}
+                      placeholder="e.g. Schedule conflict, travel plans, feeling unwell on that day…"
+                      rows={3}
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100 resize-none"
+                    />
+                  </div>
+
+                  {/* Reschedule history */}
+                  {rescheduleTarget.reschedule_history && rescheduleTarget.reschedule_history.length > 0 && (
+                    <div className="mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Previous Reschedules</p>
+                      {rescheduleTarget.reschedule_history.map((h, i) => (
+                        <div key={i} className="text-xs text-slate-600 mb-1">
+                          <span className="font-medium">{h.previous_date} at {formatTime(h.previous_time)}</span>
+                          <span className="text-slate-400"> — {h.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Submit */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={confirmReschedule}
+                      disabled={isRescheduling || !rescheduleDate || !rescheduleSlot || !rescheduleReason.trim()}
+                      className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isRescheduling ? "Rescheduling…" : "Confirm Reschedule"}
+                    </button>
+                    <button
+                      onClick={() => setRescheduleTarget(null)}
+                      className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

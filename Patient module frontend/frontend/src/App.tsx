@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Navigation from "./components/Navigation"
 import LandingPage from "./pages/LandingPage"
 import HospitalSearch from "./pages/HospitalSearch"
@@ -14,13 +14,33 @@ import PrescriptionTracker from "./pages/PrescriptionTracker"
 import ChatbotIcon from "./components/ChatbotIcon"
 import { NotificationProvider } from "./context/NotificationContext"
 import RemindersPage from "./pages/RemindersPage"
+import MyDiagnostics from "./pages/MyDiagnostics"
 import "./App.css"
+
+const API_BASE = "http://localhost:5000"
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState("home")
   const [isAuthenticating, setIsAuthenticating] = useState(true)
   const [redirectAttempted, setRedirectAttempted] = useState(false)
 
+  // ── Prescription pipeline state ──────────────────────────────────────────
+  /**
+   * When the patient taps "Analyze with AI" on a prescription notification,
+   * we fetch the prescription file from the backend, then pass it to
+   * PrescriptionTracker as a Blob so it triggers an auto-scan.
+   */
+  const [pendingPrescriptionBlob, setPendingPrescriptionBlob] = useState<Blob | null>(null)
+  const [pendingPrescriptionMime, setPendingPrescriptionMime] = useState<string>("image/jpeg")
+
+  /**
+   * After PrescriptionTracker finishes its scan it calls onAnalysisComplete
+   * with the list of medicine names found.  We store those here and redirect
+   * to RemindersPage, which consumes them via prefillMedicines.
+   */
+  const [prefillMedicines, setPrefillMedicines] = useState<string[]>([])
+
+  // ── Auth bootstrap ───────────────────────────────────────────────────────
   useEffect(() => {
     const timer = setTimeout(() => {
       const params = new URLSearchParams(window.location.search)
@@ -30,31 +50,23 @@ export default function Home() {
       const profileCompleteFromUrl = params.get("profile_complete")
 
       if (tokenFromUrl) {
-        // Store in localStorage for future use
         localStorage.setItem("auth_token", tokenFromUrl)
         localStorage.setItem("user_role", roleFromUrl || "patient")
         localStorage.setItem("user_id", userIdFromUrl || "")
         localStorage.setItem("profile_complete", profileCompleteFromUrl || "false")
 
-        console.log("[v0] Patient App received data from URL params:", { roleFromUrl, profileCompleteFromUrl })
-
-        // Determine which page to show based on profile_complete
         if (profileCompleteFromUrl !== "true") {
-          console.log("[v0] Profile not complete, showing complete-profile page")
           setCurrentPage("complete-profile")
         } else {
-          console.log("[v0] Profile complete, showing home page")
           setCurrentPage("home")
         }
         setIsAuthenticating(false)
       } else {
-        // No token in URL, check localStorage
         const authToken = localStorage.getItem("auth_token")
         const profileComplete = localStorage.getItem("profile_complete")
 
         if (!authToken) {
           if (!redirectAttempted) {
-            console.log("[v0] No auth token found, redirecting to auth")
             setRedirectAttempted(true)
             window.location.href = "http://localhost:5173"
           }
@@ -62,13 +74,10 @@ export default function Home() {
         }
 
         if (profileComplete !== "true") {
-          console.log("[v0] Profile not complete, showing complete-profile page")
           setCurrentPage("complete-profile")
         } else {
-          console.log("[v0] Profile complete, showing home page")
           setCurrentPage("home")
         }
-
         setIsAuthenticating(false)
       }
     }, 200)
@@ -76,6 +85,58 @@ export default function Home() {
     return () => clearTimeout(timer)
   }, [redirectAttempted])
 
+  // ── Prescription pipeline handler ────────────────────────────────────────
+  /**
+   * Called by NotificationBell when patient taps "Analyze with AI".
+   * Fetches the raw prescription file and navigates to PrescriptionTracker
+   * with the blob attached for auto-scan.
+   */
+  const handleAnalyzePrescription = useCallback(async (prescriptionId: string) => {
+    try {
+      const token = localStorage.getItem("auth_token") || ""
+      const res = await fetch(
+        `${API_BASE}/api/appointment-prescriptions/${prescriptionId}/file`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (!res.ok) throw new Error("Could not fetch prescription file")
+      const contentType = res.headers.get("content-type") || "image/jpeg"
+      const blob = await res.blob()
+      setPendingPrescriptionBlob(blob)
+      setPendingPrescriptionMime(contentType)
+      setPrefillMedicines([])
+      setCurrentPage("prescriptions")
+    } catch (err) {
+      console.error("[prescription-pipeline] fetch failed:", err)
+      // Still navigate — patient can manually upload
+      setPendingPrescriptionBlob(null)
+      setCurrentPage("prescriptions")
+    }
+  }, [])
+
+  // ── Handle prescription blob passed from MyDiagnostics ──────────────────────
+  useEffect(() => {
+    if (currentPage === "prescriptions" && window.prescriptionBlobToAnalyze) {
+      setPendingPrescriptionBlob(window.prescriptionBlobToAnalyze)
+      setPendingPrescriptionMime(window.prescriptionMimeToAnalyze || "image/jpeg")
+      setPrefillMedicines([])
+      // Clean up
+      delete window.prescriptionBlobToAnalyze
+      delete window.prescriptionMimeToAnalyze
+    }
+  }, [currentPage])
+
+  /**
+   * Called by PrescriptionTracker after AI analysis completes.
+   * Receives the list of analysed medicine names, stores them, then
+   * automatically navigates to RemindersPage which pre-fills all of them.
+   */
+  const handleAnalysisComplete = useCallback((medicineNames: string[]) => {
+    setPrefillMedicines(medicineNames)
+    setPendingPrescriptionBlob(null)
+    setCurrentPage("reminders")
+  }, [])
+
+  // ── Page renderer ────────────────────────────────────────────────────────
   const renderPage = () => {
     switch (currentPage) {
       case "complete-profile":
@@ -89,13 +150,27 @@ export default function Home() {
       case "booking":
         return <AppointmentBooking onNavigate={setCurrentPage} />
       case "prescriptions":
-        return <PrescriptionTracker onNavigate={setCurrentPage} />
+        return (
+          <PrescriptionTracker
+            onNavigate={setCurrentPage}
+            autoPrescriptionBlob={pendingPrescriptionBlob ?? undefined}
+            autoPrescriptionMime={pendingPrescriptionMime}
+            onAnalysisComplete={handleAnalysisComplete}
+          />
+        )
       case "reminders":
-        return <RemindersPage onNavigate={setCurrentPage} />
+        return (
+          <RemindersPage
+            onNavigate={setCurrentPage}
+            prefillMedicines={prefillMedicines.length > 0 ? prefillMedicines : undefined}
+          />
+        )
       case "history":
         return <MedicalHistory onNavigate={setCurrentPage} />
       case "ambulance":
         return <AmbulanceBooking onNavigate={setCurrentPage} />
+      case "mydiagnostics":
+        return <MyDiagnostics onNavigate={setCurrentPage} />
       case "profile":
         return <ProfilePage onNavigate={setCurrentPage} />
       default:
@@ -117,7 +192,11 @@ export default function Home() {
   return (
     <NotificationProvider>
       <div className="app">
-        <Navigation currentPage={currentPage} onNavigate={setCurrentPage} />
+        <Navigation
+          currentPage={currentPage}
+          onNavigate={setCurrentPage}
+          onAnalyzePrescription={handleAnalyzePrescription}
+        />
         <main className="main-content">{renderPage()}</main>
         <ChatbotIcon />
       </div>

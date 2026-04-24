@@ -22,7 +22,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   return (
     <div className="flex flex-col bg-gradient-to-b from-sky-50 via-white to-cyan-50 w-full overflow-x-hidden font-['Inter',sans-serif]">
       {/* Hero Section */}
-      <section 
+      <section
         className="flex flex-col justify-center items-center px-5 md:px-10 py-32 bg-cover bg-center min-h-[550px] relative w-full max-w-full md:min-h-[500px] md:py-24 overflow-hidden"
         style={{
           backgroundImage: "url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Untitled%20design-jKJ779DCluSGGvpGCq075WEh7cS7tU.jpg')"
@@ -30,7 +30,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       >
         {/* Light Overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-white/85 via-sky-50/80 to-cyan-50/85"></div>
-        
+
         {/* Floating elements */}
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute w-96 h-96 bg-sky-200/30 rounded-full blur-3xl top-0 right-1/4 animate-float"></div>
@@ -40,9 +40,9 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
         <div className={`flex flex-col gap-6 text-center max-w-[650px] relative z-10 px-5 transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div className="inline-block mx-auto px-4 py-2 bg-gradient-to-r from-sky-100 to-cyan-100 rounded-full text-sky-700 text-sm font-semibold mb-2 animate-fade-in">
-            
+
           </div>
-          <h1 className="text-5xl md:text-6xl font-extrabold bg-gradient-to-r from-sky-700 via-cyan-600 to-blue-700 bg-clip-text text-transparent leading-tight animate-fade-in" style={{ fontFamily: "'Poppins', sans-serif" }}>
+          <h1 className="text-5xl md:text-6xl font-extrabold bg-gradient-to-r from-sky-700 via-cyan-600 to-blue-700 bg-clip-text text-transparent leading-tight animate-fade-in" style={{ fontFamily: "'Sora', sans-serif" }}>
             Your Health, Our Priority
           </h1>
           <p className="text-lg md:text-xl leading-relaxed text-slate-700 font-medium animate-fade-in-delay" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -58,7 +58,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSearch()}
             />
-            <button 
+            <button
               className="px-10 py-4 bg-gradient-to-r from-sky-500 to-cyan-500 text-white rounded-2xl text-base font-bold cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_32px_rgba(14,165,233,0.3)] hover:scale-105 active:scale-95 shadow-xl shadow-sky-200/50"
               onClick={handleSearch}
             >
@@ -93,9 +93,9 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             Experience seamless healthcare management with our comprehensive suite of services
           </p>
         </div>
-        
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div 
+          <div
             className="group bg-white p-8 rounded-3xl shadow-lg shadow-sky-100/50 cursor-pointer transition-all duration-500 text-center hover:-translate-y-2 hover:shadow-2xl hover:shadow-sky-200/60 border-2 border-sky-100 hover:border-sky-300 animate-slide-up"
             onClick={() => onNavigate("search")}
           >
@@ -108,7 +108,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </p>
           </div>
 
-          <div 
+          <div
             className="group bg-white p-8 rounded-3xl shadow-lg shadow-cyan-100/50 cursor-pointer transition-all duration-500 text-center hover:-translate-y-2 hover:shadow-2xl hover:shadow-cyan-200/60 border-2 border-cyan-100 hover:border-cyan-300 animate-slide-up delay-100"
             onClick={() => onNavigate("availability")}
           >
@@ -121,7 +121,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </p>
           </div>
 
-          <div 
+          <div
             className="group bg-white p-8 rounded-3xl shadow-lg shadow-sky-100/50 cursor-pointer transition-all duration-500 text-center hover:-translate-y-2 hover:shadow-2xl hover:shadow-sky-200/60 border-2 border-sky-100 hover:border-sky-300 animate-slide-up delay-200"
             onClick={() => onNavigate("booking")}
           >
@@ -134,7 +134,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </p>
           </div>
 
-          <div 
+          <div
             className="group bg-white p-8 rounded-3xl shadow-lg shadow-cyan-100/50 cursor-pointer transition-all duration-500 text-center hover:-translate-y-2 hover:shadow-2xl hover:shadow-cyan-200/60 border-2 border-cyan-100 hover:border-cyan-300 animate-slide-up delay-300"
             onClick={() => onNavigate("history")}
           >
@@ -183,7 +183,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           <p className="text-xl mb-10 opacity-95">
             Join thousands of patients managing their health with PulseSync
           </p>
-          <button 
+          <button
             className="px-12 py-5 bg-white text-sky-600 rounded-2xl text-lg font-bold cursor-pointer transition-all duration-300 hover:scale-110 hover:shadow-[0_16px_32px_rgba(0,0,0,0.2)] active:scale-95 shadow-xl hover:bg-sky-50"
             onClick={() => onNavigate("search")}
           >
@@ -284,7 +284,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       </footer>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
         
         @keyframes float {
           0%, 100% { transform: translate(0, 0); }

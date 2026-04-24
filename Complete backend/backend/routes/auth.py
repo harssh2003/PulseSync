@@ -280,13 +280,27 @@ def get_all_doctors():
 def get_doctors_availability():
     """
     Patient Availability page calls this to list all hospitals+doctors.
-    Returns doctor_name separately from hospital (full_name).
+    Returns all future available dates and slots per doctor.
     """
     try:
         db                      = get_db()
         users_collection        = db['users']
         availability_collection = db['availability']
-        today                   = datetime.utcnow().date().isoformat()
+
+        # Use IST for date/time
+        from datetime import timezone as tz
+        IST = tz(timedelta(hours=5, minutes=30))
+        now_ist  = datetime.now(IST)
+        today    = now_ist.strftime("%Y-%m-%d")
+        cur_time = now_ist.strftime("%H:%M")
+
+        # Skip today entirely if past 6 PM
+        if cur_time >= "18:00":
+            date_filter = (now_ist + timedelta(days=1)).strftime("%Y-%m-%d")
+        else:
+            date_filter = today
+
+        selected_date = request.args.get('date')  # optional date filter from frontend
 
         doctors = list(users_collection.find(
             {'role': 'hospital'},
@@ -296,24 +310,53 @@ def get_doctors_availability():
 
         doctor_list = []
         for doc in doctors:
-            doctor_id    = str(doc['_id'])
-            availability = availability_collection.find_one(
-                {'doctor_id': doctor_id, 'date': {'$gte': today}},
-                sort=[('date', 1)]
-            )
+            doctor_id = str(doc['_id'])
 
-            raw_slots  = availability.get('available_slots', []) if availability else []
-            safe_slots = []
-            for slot in raw_slots:
-                if isinstance(slot, dict) and slot.get('available', True):
-                    safe_slots.append({'time': slot.get('time', ''), 'end': slot.get('end', ''), 'available': True})
-                elif isinstance(slot, str):
-                    safe_slots.append({'time': slot, 'end': '', 'available': True})
+            # Build availability query
+            avail_query = {'doctor_id': doctor_id, 'status': 'available'}
+            if selected_date:
+                avail_query['date'] = selected_date
+            else:
+                avail_query['date'] = {'$gte': date_filter}
+
+            all_avail = list(availability_collection.find(
+                avail_query
+            ).sort('date', 1).limit(14))
+
+            # Collect all dates with their available slots
+            dates_data = []
+            flat_slots = []
+            for avail in all_avail:
+                avail_date = avail.get('date', '')
+                raw_slots  = avail.get('available_slots', [])
+                safe_slots = []
+                for slot in raw_slots:
+                    if isinstance(slot, dict) and slot.get('available', True):
+                        t = slot.get('time', '')
+                        # Filter past slots for today
+                        if avail_date == today and t <= cur_time:
+                            continue
+                        safe_slots.append({'time': t, 'end': slot.get('end', ''), 'available': True})
+                    elif isinstance(slot, str):
+                        if avail_date == today and slot <= cur_time:
+                            continue
+                        safe_slots.append({'time': slot, 'end': '', 'available': True})
+
+                if safe_slots:
+                    dates_data.append({
+                        'date': avail_date,
+                        'slots': safe_slots,
+                        'total_slots': len(raw_slots),
+                        'available_slots': len(safe_slots),
+                    })
+                    flat_slots.extend(safe_slots)
+
+            first_avail = all_avail[0] if all_avail else None
 
             doctor_list.append({
                 'id':                doctor_id,
-                'name':              _resolve_doctor_name(doc),   # "Dr. Arjun Mehta"
-                'hospital':          _resolve_hospital_name(doc), # "PulseSync Hospital"
+                'name':              _resolve_doctor_name(doc),
+                'hospital':          _resolve_hospital_name(doc),
                 'specialty':         doc.get('department', 'General Practice'),
                 'position':          doc.get('staff_position', 'Doctor'),
                 'email':             doc.get('email', ''),
@@ -321,11 +364,12 @@ def get_doctors_availability():
                 'experience':        '5+ years',
                 'image':             '/male-doctor.png',
                 'nextAvailable':     (
-                    f"{availability.get('date')} {availability.get('start_time', '')}"
-                    if availability else 'Not set'
+                    f"{first_avail.get('date')} {first_avail.get('start_time', '')}"
+                    if first_avail else 'Not set'
                 ),
-                'slots':             safe_slots,
-                'availability_date': availability.get('date') if availability else None,
+                'slots':             flat_slots[:8],          # first 8 for quick display
+                'dates':             dates_data,              # all dates grouped
+                'availability_date': first_avail.get('date') if first_avail else None,
             })
 
         return jsonify({'doctors': doctor_list, 'total': len(doctor_list)}), 200

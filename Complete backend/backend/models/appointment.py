@@ -10,7 +10,7 @@ class AppointmentModel:
         self.collection = db['appointments']
     
     @staticmethod
-    def create_appointment(db, patient_id, doctor_id, hospital_id, appointment_date, appointment_time, reason, notes):
+    def create_appointment(db, patient_id, doctor_id, hospital_id, appointment_date, appointment_time, reason, notes, urgency_score=1):
         """
         Create a new appointment in the database.
         """
@@ -23,6 +23,7 @@ class AppointmentModel:
             'reason': reason,
             'notes': notes,
             'status': 'pending',
+            'urgency_score': urgency_score,
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow()
         }
@@ -40,6 +41,7 @@ class AppointmentModel:
             'reason': appointment_data['reason'],
             'notes': appointment_data['notes'],
             'status': appointment_data['status'],
+            'urgency_score': appointment_data.get('urgency_score', 1),
             'created_at': appointment_data['created_at'].isoformat(),
             'updated_at': appointment_data['updated_at'].isoformat()
         }
@@ -62,6 +64,7 @@ class AppointmentModel:
                 'reason': apt['reason'],
                 'notes': apt['notes'],
                 'status': apt['status'],
+                'urgency_score': apt.get('urgency_score', 1),
                 'created_at': apt['created_at'].isoformat(),
                 'updated_at': apt['updated_at'].isoformat()
             }
@@ -85,6 +88,7 @@ class AppointmentModel:
                 'reason': apt['reason'],
                 'notes': apt['notes'],
                 'status': apt['status'],
+                'urgency_score': apt.get('urgency_score', 1),
                 'created_at': apt['created_at'].isoformat(),
                 'updated_at': apt['updated_at'].isoformat()
             }
@@ -108,6 +112,7 @@ class AppointmentModel:
                 'reason': apt['reason'],
                 'notes': apt['notes'],
                 'status': apt['status'],
+                'urgency_score': apt.get('urgency_score', 1),
                 'created_at': apt['created_at'].isoformat(),
                 'updated_at': apt['updated_at'].isoformat()
             }
@@ -156,6 +161,64 @@ class AppointmentModel:
             'reason': apt['reason'],
             'notes': apt['notes'],
             'status': apt['status'],
+            'urgency_score': apt.get('urgency_score', 1),
             'created_at': apt['created_at'].isoformat(),
-            'updated_at': apt['updated_at'].isoformat()
+            'updated_at': apt['updated_at'].isoformat(),
+            'reschedule_reason': apt.get('reschedule_reason', ''),
+            'reschedule_history': apt.get('reschedule_history', []),
         }
+
+    @staticmethod
+    def reschedule_appointment(db, appointment_id, new_date, new_time, reschedule_reason):
+        """
+        Reschedule an existing appointment to a new date/time.
+        Stores the reason and appends to reschedule_history.
+        Resets status to 'pending' so the hospital can re-confirm.
+        """
+        collection = db['appointments']
+        apt = collection.find_one({'_id': ObjectId(appointment_id)})
+        if not apt:
+            return None
+
+        # Build history entry from the current (old) values
+        history_entry = {
+            'previous_date': apt.get('appointment_date', ''),
+            'previous_time': apt.get('appointment_time', ''),
+            'reason': reschedule_reason,
+            'rescheduled_at': datetime.utcnow().isoformat(),
+        }
+
+        existing_history = apt.get('reschedule_history', [])
+        existing_history.append(history_entry)
+
+        result = collection.update_one(
+            {'_id': ObjectId(appointment_id)},
+            {'$set': {
+                'appointment_date': new_date,
+                'appointment_time': new_time,
+                'status': 'pending',
+                'reschedule_reason': reschedule_reason,
+                'reschedule_history': existing_history,
+                'updated_at': datetime.utcnow(),
+            }}
+        )
+
+        if result.modified_count > 0:
+            updated = collection.find_one({'_id': ObjectId(appointment_id)})
+            return {
+                'id': str(updated['_id']),
+                'patient_id': str(updated['patient_id']),
+                'doctor_id': updated['doctor_id'],
+                'hospital_id': updated['hospital_id'],
+                'appointment_date': updated['appointment_date'],
+                'appointment_time': updated['appointment_time'],
+                'reason': updated['reason'],
+                'notes': updated['notes'],
+                'status': updated['status'],
+                'urgency_score': updated.get('urgency_score', 1),
+                'reschedule_reason': updated.get('reschedule_reason', ''),
+                'reschedule_history': updated.get('reschedule_history', []),
+                'created_at': updated['created_at'].isoformat(),
+                'updated_at': updated['updated_at'].isoformat(),
+            }
+        return None

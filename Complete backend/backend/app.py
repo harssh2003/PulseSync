@@ -8,16 +8,6 @@ from pymongo import MongoClient
 from routes.notifications import notifications_bp
 
 
-# from google import genai
-# print("✅ USING NEW GOOGLE-GENAI SDK")
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-# print("\nAvailable Models:")
-# for model in client.models.list():
-#     print(model.name)
-# print("\n")
-# from routes.chatbot import chatbot_bp
-# Initialize Flask app
 app = Flask(__name__)
 
 
@@ -35,15 +25,11 @@ cors_config = {
     'max_age': 3600
 }
 
-# Apply CORS to entire app, not just /api/* routes
 CORS(app, resources={"/*": cors_config})
-
-# app.register_blueprint(chatbot_bp, url_prefix="/api/chatbot")
 
 # Global database connection
 db = None
 
-# Test MongoDB connection
 try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.admin.command('ping')
@@ -53,24 +39,28 @@ except Exception as e:
     print(f"✗ Failed to connect to MongoDB: {e}")
     print("Make sure MongoDB is running on localhost:27017")
 
-# Store database in app context for route access
 app.db = db
 
 # Register blueprints
 from routes.auth import auth_bp
 from routes.appointments import appointments_bp
 from routes.prescriptions import prescriptions_bp
+from routes.diagnostics import diagnostics_bp   # ← NEW
+
 app.register_blueprint(auth_bp)
 app.register_blueprint(appointments_bp)
 app.register_blueprint(prescriptions_bp)
 app.register_blueprint(notifications_bp)
+app.register_blueprint(diagnostics_bp)          # ← NEW
 
 # Health check route
 @app.route('/health', methods=['GET'])
 def health():
-    return {'status': 'Backend is running', 'database': 'connected' if db else 'disconnected'}, 200
+    return {
+    'status': 'Backend is running',
+    'database': 'connected' if db is not None else 'disconnected'
+}, 200
 
-# Error handlers
 @app.errorhandler(404)
 def not_found(error):
     return {'error': 'Route not found', 'path': error.description}, 404
@@ -82,14 +72,16 @@ def server_error(error):
 @app.errorhandler(400)
 def bad_request(error):
     return {'error': 'Bad request'}, 400
+
 from routes.places import places_bp
 app.register_blueprint(places_bp)
 from routes.chatbot import chatbot_bp
 app.register_blueprint(chatbot_bp)
 from routes.reminders import reminders_bp
 app.register_blueprint(reminders_bp)
-# with app.app_context():
-#     get_scheduler()
+from routes.appointment_prescriptions import apt_prescriptions_bp
+app.register_blueprint(apt_prescriptions_bp)
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("Starting PulseSync Backend...")
@@ -100,6 +92,5 @@ if __name__ == '__main__':
     print(f"🚀 Server Port: {PORT}")
     print("="*60)
     print("✓ Press Ctrl+C to stop the server\n")
-    
-    app.run(host='0.0.0.0', port=PORT, debug=True)
 
+    app.run(host='0.0.0.0', port=PORT, debug=True)

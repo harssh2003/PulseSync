@@ -12,6 +12,13 @@ interface TimeSlot {
   available: boolean
 }
 
+interface DateSlots {
+  date: string
+  slots: TimeSlot[]
+  total_slots: number
+  available_slots: number
+}
+
 interface Doctor {
   id: string
   name: string
@@ -24,11 +31,13 @@ interface Doctor {
   image: string
   nextAvailable: string
   slots: TimeSlot[]
+  dates: DateSlots[]
   availability_date: string | null
 }
 
 interface BookingState {
   doctor: Doctor | null
+  selectedDate: string
   selectedSlot: TimeSlot | null
   reason: string
   notes: string
@@ -48,6 +57,7 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
   // Booking modal state
   const [booking, setBooking] = useState<BookingState>({
     doctor: null,
+    selectedDate: "",
     selectedSlot: null,
     reason: "",
     notes: "",
@@ -66,8 +76,6 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
   }
 
   // ── Fetch hospitals / doctors ───────────────────────────────────────────
-  // FIX: token is read inside the function (not from state) so there is no
-  //      race condition between useEffect and useState.
   const fetchDoctors = useCallback(async () => {
     try {
       setIsLoading(true)
@@ -105,7 +113,7 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
 
   // ── Book appointment ────────────────────────────────────────────────────
   const handleBookAppointment = async () => {
-    const { doctor, selectedSlot, reason, notes } = booking
+    const { doctor, selectedDate, selectedSlot, reason, notes } = booking
 
     if (!doctor || !selectedSlot) {
       setError("Please select a time slot.")
@@ -121,11 +129,11 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
       setError(null)
 
       const token = getToken()
-      const appointmentDate = doctor.availability_date ?? new Date().toISOString().split("T")[0]
+      const appointmentDate = selectedDate || doctor.availability_date || new Date().toISOString().split("T")[0]
 
       const payload = {
         doctor_id:        doctor.id,
-        hospital_id:      doctor.id,   // hospital user IS the doctor in this system
+        hospital_id:      doctor.id,
         appointment_date: appointmentDate,
         appointment_time: selectedSlot.time,
         reason:           reason.trim(),
@@ -152,7 +160,7 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
       setTimeout(() => setSuccessMessage(null), 5000)
 
       // Close modal & refresh
-      setBooking({ doctor: null, selectedSlot: null, reason: "", notes: "", isSubmitting: false })
+      setBooking({ doctor: null, selectedDate: "", selectedSlot: null, reason: "", notes: "", isSubmitting: false })
       fetchDoctors()
     } catch (err) {
       console.error("[v0] Error booking appointment:", err)
@@ -160,6 +168,20 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
       setTimeout(() => setError(null), 5000)
       setBooking((b) => ({ ...b, isSubmitting: false }))
     }
+  }
+
+  // ── Get slots for currently selected date in booking modal ─────────────
+  const getSelectedDateSlots = (): TimeSlot[] => {
+    if (!booking.doctor || !booking.selectedDate) return []
+    const dateEntry = booking.doctor.dates?.find(d => d.date === booking.selectedDate)
+    return dateEntry?.slots ?? []
+  }
+
+  const isSelectedDateFullyBooked = (): boolean => {
+    if (!booking.doctor || !booking.selectedDate) return false
+    const dateEntry = booking.doctor.dates?.find(d => d.date === booking.selectedDate)
+    if (!dateEntry) return true // No entry = no availability
+    return dateEntry.available_slots === 0
   }
 
   const specialties = ["all", ...Array.from(new Set(doctors.map((d) => d.specialty)))]
@@ -269,37 +291,25 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
                   </div>
                 </div>
 
-                {/* Slots */}
+                {/* Available dates summary */}
                 <div className="p-4 flex-1 flex flex-col">
                   <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                    Available Slots
+                    Available Dates
                   </p>
 
-                  {doctor.slots && doctor.slots.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {doctor.slots.slice(0, 6).map((slot, i) => (
-                        <button
-                          key={i}
-                          onClick={() =>
-                            setBooking((b) => ({
-                              ...b,
-                              doctor,
-                              selectedSlot: slot,
-                            }))
-                          }
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${
-                            booking.doctor?.id === doctor.id &&
-                            booking.selectedSlot?.time === slot.time
-                              ? "bg-cyan-500 text-white border-cyan-500"
-                              : "bg-white text-cyan-700 border-cyan-200 hover:border-cyan-400 hover:bg-cyan-50"
-                          }`}
+                  {doctor.dates && doctor.dates.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {doctor.dates.slice(0, 5).map((d) => (
+                        <span
+                          key={d.date}
+                          className="px-2 py-1 rounded-lg text-xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200"
                         >
-                          {formatTime(slot.time)}
-                        </button>
+                          {formatDate(d.date)} · {d.available_slots} slot{d.available_slots !== 1 ? "s" : ""}
+                        </span>
                       ))}
-                      {doctor.slots.length > 6 && (
-                        <span className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 border-2 border-slate-100">
-                          +{doctor.slots.length - 6} more
+                      {doctor.dates.length > 5 && (
+                        <span className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-400 border border-slate-100">
+                          +{doctor.dates.length - 5} more
                         </span>
                       )}
                     </div>
@@ -309,22 +319,19 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
                     </p>
                   )}
 
-                  <p className="text-xs text-slate-500 mb-3">
-                    📅 Next: <span className="font-semibold text-slate-700">{doctor.nextAvailable}</span>
-                  </p>
-
                   <button
                     onClick={() =>
                       setBooking((b) => ({
                         ...b,
                         doctor,
-                        selectedSlot: doctor.slots[0] ?? null,
+                        selectedDate: doctor.dates?.[0]?.date ?? "",
+                        selectedSlot: null,
                       }))
                     }
-                    disabled={!doctor.slots || doctor.slots.length === 0}
+                    disabled={!doctor.dates || doctor.dates.length === 0}
                     className="mt-auto w-full py-2.5 bg-gradient-to-r from-cyan-500 to-sky-500 text-white rounded-xl text-sm font-semibold hover:shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {doctor.slots && doctor.slots.length > 0 ? "Book Appointment" : "Unavailable"}
+                    {doctor.dates && doctor.dates.length > 0 ? "Book Appointment" : "Unavailable"}
                   </button>
                 </div>
               </div>
@@ -347,59 +354,93 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
 
       {/* ── Booking Modal ───────────────────────────────────────────────── */}
       {booking.doctor && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative">
-            {/* Close */}
-            <button
-              onClick={() =>
-                setBooking({ doctor: null, selectedSlot: null, reason: "", notes: "", isSubmitting: false })
-              }
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors"
-            >
-              ✕
-            </button>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[999] flex items-start justify-center pt-24 pb-6 px-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative flex flex-col max-h-[80vh]">
+            {/* Sticky header with close button */}
+            <div className="flex items-center justify-between p-6 pb-2 flex-shrink-0">
+              <div>
+                <h2
+                  className="text-2xl font-bold text-slate-900"
+                  style={{ fontFamily: "'Poppins', sans-serif" }}
+                >
+                  Book Appointment
+                </h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  with <span className="font-semibold text-cyan-600">{booking.doctor.name}</span>
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  setBooking({ doctor: null, selectedDate: "", selectedSlot: null, reason: "", notes: "", isSubmitting: false })
+                }
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors flex-shrink-0"
+              >
+                ✕
+              </button>
+            </div>
 
-            <h2
-              className="text-2xl font-bold text-slate-900 mb-1"
-              style={{ fontFamily: "'Poppins', sans-serif" }}
-            >
-              Book Appointment
-            </h2>
-            <p className="text-sm text-slate-500 mb-6">
-              with <span className="font-semibold text-cyan-600">{booking.doctor.name}</span>
-            </p>
+            {/* Scrollable body */}
+            <div className="overflow-y-auto px-6 pb-6 pt-2 flex-1">
 
-            {/* Slot selection */}
+            {/* Date selection */}
             <div className="mb-4">
               <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Select Time Slot <span className="text-red-500">*</span>
+                Select Date <span className="text-red-500">*</span>
               </label>
               <div className="flex flex-wrap gap-2">
-                {booking.doctor.slots.map((slot, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setBooking((b) => ({ ...b, selectedSlot: slot }))}
-                    className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
-                      booking.selectedSlot?.time === slot.time
-                        ? "bg-cyan-500 text-white border-cyan-500 shadow-md"
-                        : "bg-white text-cyan-700 border-cyan-200 hover:border-cyan-400"
-                    }`}
-                  >
-                    {formatTime(slot.time)}
-                  </button>
-                ))}
+                {booking.doctor.dates && booking.doctor.dates.length > 0 ? (
+                  booking.doctor.dates.map((d) => (
+                    <button
+                      key={d.date}
+                      onClick={() => setBooking((b) => ({ ...b, selectedDate: d.date, selectedSlot: null }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                        booking.selectedDate === d.date
+                          ? "bg-cyan-500 text-white border-cyan-500 shadow-md"
+                          : "bg-white text-cyan-700 border-cyan-200 hover:border-cyan-400"
+                      }`}
+                    >
+                      {formatDateFull(d.date)}
+                      <span className="block text-xs opacity-75 font-normal">
+                        {d.available_slots} slot{d.available_slots !== 1 ? "s" : ""}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No available dates</p>
+                )}
               </div>
             </div>
 
-            {/* Date display */}
-            {booking.doctor.availability_date && (
-              <div className="mb-4 p-3 bg-cyan-50 rounded-xl border border-cyan-200">
-                <p className="text-sm text-cyan-700 font-semibold">
-                  📅 Date:{" "}
-                  {new Date(booking.doctor.availability_date + "T00:00:00").toLocaleDateString("en-IN", {
-                    weekday: "long", year: "numeric", month: "long", day: "numeric",
-                  })}
-                </p>
+            {/* Slot selection */}
+            {booking.selectedDate && (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Select Time Slot <span className="text-red-500">*</span>
+                </label>
+
+                {/* Fully booked banner */}
+                {isSelectedDateFullyBooked() && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm font-semibold text-amber-700">⚠️ All slots are booked for this date</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Please try another date or check back later.</p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  {getSelectedDateSlots().map((slot, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setBooking((b) => ({ ...b, selectedSlot: slot }))}
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                        booking.selectedSlot?.time === slot.time
+                          ? "bg-cyan-500 text-white border-cyan-500 shadow-md"
+                          : "bg-white text-cyan-700 border-cyan-200 hover:border-cyan-400"
+                      }`}
+                    >
+                      {formatTime(slot.time)}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -444,6 +485,7 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
             >
               {booking.isSubmitting ? "Booking…" : "Confirm Appointment"}
             </button>
+            </div>{/* end scrollable body */}
           </div>
         </div>
       )}
@@ -458,7 +500,6 @@ export default function Availability({ onNavigate }: AvailabilityProps) {
 // ── Helpers ───────────────────────────────────────────────────────────────
 function formatTime(time: string): string {
   if (!time) return ""
-  // Handle both "09:00" and "9:00 AM" formats
   if (time.includes("AM") || time.includes("PM")) return time
   const [hStr, mStr] = time.split(":")
   const h = parseInt(hStr, 10)
@@ -467,4 +508,16 @@ function formatTime(time: string): string {
   const period = h >= 12 ? "PM" : "AM"
   const displayH = h % 12 === 0 ? 12 : h % 12
   return `${displayH}:${m.toString().padStart(2, "0")} ${period}`
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return ""
+  const d = new Date(dateStr + "T00:00:00")
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+}
+
+function formatDateFull(dateStr: string): string {
+  if (!dateStr) return ""
+  const d = new Date(dateStr + "T00:00:00")
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })
 }

@@ -25,8 +25,11 @@ interface Appointment {
   reason: string
   notes: string
   status: "pending" | "confirmed" | "completed" | "cancelled"
+  urgency_score?: number
   created_at: string
   updated_at: string
+  reschedule_reason?: string
+  reschedule_history?: Array<{ previous_date: string; previous_time: string; reason: string; rescheduled_at: string }>
 }
 
 const API_BASE_URL = "http://localhost:5000/api"
@@ -264,6 +267,11 @@ export default function AppointmentManagement({ onNavigate }: AppointmentManagem
                     <span className="text-xs px-3 py-1 bg-sky-100 text-sky-700 rounded-full font-semibold">
                       {apt.reason}
                     </span>
+                    {apt.reschedule_reason && (
+                      <span className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded-full font-semibold">
+                        🔄 Rescheduled
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -294,6 +302,16 @@ export default function AppointmentManagement({ onNavigate }: AppointmentManagem
                 </div>
 
                 <div className="text-right">
+                  {apt.urgency_score === 4 && (
+                    <span className="block px-4 py-1.5 rounded-lg text-xs font-bold mb-2 text-center bg-red-100 text-red-700 animate-pulse border border-red-200 shadow-sm">
+                      🚨 Emergency
+                    </span>
+                  )}
+                  {apt.urgency_score === 3 && (
+                    <span className="block px-4 py-1.5 rounded-lg text-xs font-bold mb-2 text-center bg-orange-100 text-orange-700 border border-orange-200 shadow-sm">
+                      ⚠️ High Priority
+                    </span>
+                  )}
                   <span
                     className={`block px-4 py-2 rounded-lg text-xs font-semibold mb-3 text-center ${
                       apt.status === "confirmed"
@@ -437,6 +455,46 @@ export default function AppointmentManagement({ onNavigate }: AppointmentManagem
                   </div>
                 )}
               </div>
+
+              {/* Reschedule info */}
+              {selectedAppointment.reschedule_reason && (
+                <div className="bg-amber-50 p-6 rounded-xl border-2 border-amber-200">
+                  <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <span className="text-lg">🔄</span> Reschedule Information
+                  </h3>
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-slate-600 uppercase mb-1">Reason for Rescheduling</p>
+                    <p className="text-base font-medium text-amber-800 bg-amber-100 px-3 py-2 rounded-lg">
+                      {selectedAppointment.reschedule_reason}
+                    </p>
+                  </div>
+                  {selectedAppointment.reschedule_history && selectedAppointment.reschedule_history.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-600 uppercase mb-2">Reschedule History</p>
+                      <div className="space-y-2">
+                        {selectedAppointment.reschedule_history.map((h, i) => (
+                          <div key={i} className="flex items-start gap-3 bg-white p-3 rounded-lg border border-amber-100">
+                            <div className="w-6 h-6 bg-amber-200 rounded-full flex items-center justify-center text-xs font-bold text-amber-800 flex-shrink-0 mt-0.5">
+                              {i + 1}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-slate-800">
+                                {h.previous_date} at {h.previous_time}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Reason: {h.reason}
+                              </p>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                Changed on: {new Date(h.rescheduled_at).toLocaleString("en-IN")}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-3 justify-end">

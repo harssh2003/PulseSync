@@ -33,6 +33,8 @@ interface MedicineReminder {
 interface RemindersPageProps {
   onNavigate: (page: string) => void
   prefillMedicine?: string
+  /** List of medicines from a prescription scan — triggers the auto-setup banner */
+  prefillMedicines?: string[]
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -301,7 +303,7 @@ function ReminderCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function RemindersPage({ onNavigate, prefillMedicine = "" }: RemindersPageProps) {
+export default function RemindersPage({ onNavigate, prefillMedicine = "", prefillMedicines }: RemindersPageProps) {
   const [isVisible, setIsVisible] = useState(true)
   const [view, setView] = useState<"list" | "create" | "edit">("list")
   const [editingReminder, setEditingReminder] = useState<(MedicineReminder & { id: string }) | null>(null)
@@ -310,6 +312,29 @@ export default function RemindersPage({ onNavigate, prefillMedicine = "" }: Remi
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState("")
   const [testMsg, setTestMsg] = useState("")
+
+  // ── Prescription pipeline: multi-medicine queue ──────────────────────────
+  /**
+   * When the patient arrives from a prescription scan, prefillMedicines contains
+   * every medicine that was analysed.  We show a banner listing all of them and
+   * let the user cycle through creating a reminder for each one.
+   */
+  const [rxQueue, setRxQueue] = useState<string[]>(() => prefillMedicines ?? [])
+  const [rxQueueIndex, setRxQueueIndex] = useState(0)
+  const [rxBannerDismissed, setRxBannerDismissed] = useState(false)
+
+  // When a new prefillMedicines list arrives (navigating here from prescription scan)
+  useEffect(() => {
+    if (prefillMedicines && prefillMedicines.length > 0) {
+      setRxQueue(prefillMedicines)
+      setRxQueueIndex(0)
+      setRxBannerDismissed(false)
+      // Auto-open the create form with the first medicine
+      setView("create")
+      setStep(1)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillMedicines])
 
   const [reminders, setReminders] = useState<(MedicineReminder & { id: string })[]>([])
   useEffect(() => {
@@ -343,7 +368,9 @@ export default function RemindersPage({ onNavigate, prefillMedicine = "" }: Remi
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Form state
-  const [medicineName, setMedicineName] = useState(prefillMedicine)
+  const [medicineName, setMedicineName] = useState(
+    () => (prefillMedicines && prefillMedicines.length > 0) ? prefillMedicines[0] : prefillMedicine
+  )
   const [dosageNote, setDosageNote] = useState("")
   const [frequency, setFrequency] = useState<FrequencyType>("daily")
   const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([...DAYS])
@@ -432,6 +459,24 @@ export default function RemindersPage({ onNavigate, prefillMedicine = "" }: Remi
       if (!res.ok) throw new Error(data.error || "Failed to save reminder")
       setReminders(prev => [{ ...buildPayload(), id: data.id || Date.now().toString() }, ...prev])
       setSaved(true)
+
+      // ── Prescription pipeline: advance to next medicine ──────────────────
+      if (rxQueue.length > 0) {
+        const nextIndex = rxQueueIndex + 1
+        if (nextIndex < rxQueue.length) {
+          // More medicines to set up — load next after a short delay
+          setTimeout(() => {
+            setRxQueueIndex(nextIndex)
+            setMedicineName(rxQueue[nextIndex])
+            setSaved(false)
+            setStep(1)
+            resetForm()
+            // Keep medicine name from queue
+            setMedicineName(rxQueue[nextIndex])
+          }, 2000)
+        }
+        // else: all medicines done — stay on saved screen, user can view list
+      }
     } catch (e: any) { setError(e.message) }
     finally { setSaving(false) }
   }
@@ -618,6 +663,49 @@ export default function RemindersPage({ onNavigate, prefillMedicine = "" }: Remi
         </div>
       )}
 
+      {/* ── Prescription Pipeline Banner ── */}
+      {rxQueue.length > 0 && !rxBannerDismissed && (
+        <div style={{
+          background: "linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)",
+          border: "2px solid #c7d2fe",
+          borderRadius: 20,
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 14,
+          boxShadow: "0 4px 20px rgba(79,70,229,0.1)",
+        }}>
+          <div style={{ fontSize: 28, flexShrink: 0, marginTop: 2 }}>💊</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#3730a3", marginBottom: 6 }}>
+              Prescription Reminders Setup
+            </div>
+            <div style={{ fontSize: 13, color: "#4338ca", lineHeight: 1.6, marginBottom: 10 }}>
+              Your doctor's prescription has been analysed. Set up reminders for each medicine below:
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {rxQueue.map((med, i) => (
+                <span key={i} style={{
+                  padding: "4px 12px",
+                  borderRadius: 100,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: i < rxQueueIndex ? "#dcfce7" : i === rxQueueIndex ? "#4f46e5" : "white",
+                  color: i < rxQueueIndex ? "#166534" : i === rxQueueIndex ? "white" : "#4338ca",
+                  border: `1.5px solid ${i < rxQueueIndex ? "#86efac" : i === rxQueueIndex ? "#4f46e5" : "#c7d2fe"}`,
+                }}>
+                  {i < rxQueueIndex ? "✓ " : i === rxQueueIndex ? "→ " : ""}{med}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => setRxBannerDismissed(true)}
+            style={{ background: "none", border: "none", color: "#a5b4fc", cursor: "pointer", fontSize: 18, flexShrink: 0, padding: 0 }}
+          >✕</button>
+        </div>
+      )}
+
       {/* ── Tab bar ── */}
       <div className={`transition-all duration-700 delay-150 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-5"}`}>
         <div className="flex items-center justify-between mb-6">
@@ -687,9 +775,45 @@ export default function RemindersPage({ onNavigate, prefillMedicine = "" }: Remi
                 <p className="text-slate-500 text-sm max-w-sm mx-auto mb-8">
                   We'll remind you to take <strong className="text-slate-700">{medicineName}</strong> at your scheduled times via {channel === "both" ? "email & WhatsApp" : channel}.
                 </p>
+
+                {/* ── Prescription queue: show progress + next button ── */}
+                {rxQueue.length > 0 && rxQueueIndex + 1 < rxQueue.length ? (
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ fontSize: 13, color: "#4338ca", fontWeight: 600, marginBottom: 12 }}>
+                      {rxQueueIndex + 1} of {rxQueue.length} medicines done
+                    </div>
+                    <button
+                      onClick={() => {
+                        const ni = rxQueueIndex + 1
+                        setRxQueueIndex(ni)
+                        setSaved(false)
+                        setStep(1)
+                        resetForm()
+                        setMedicineName(rxQueue[ni])
+                      }}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        padding: "12px 24px", borderRadius: 12, border: "none",
+                        background: "linear-gradient(135deg,#4f46e5,#7c3aed)",
+                        color: "white", fontWeight: 700, fontSize: 14, cursor: "pointer",
+                        boxShadow: "0 4px 16px rgba(79,70,229,0.3)",
+                      }}
+                    >
+                      <PlusIcon size={13} color="white" />
+                      Set Reminder for {rxQueue[rxQueueIndex + 1]}
+                    </button>
+                  </div>
+                ) : rxQueue.length > 0 && rxQueueIndex + 1 >= rxQueue.length ? (
+                  <div style={{ fontSize: 13, color: "#16a34a", fontWeight: 600, marginBottom: 16 }}>
+                    ✅ All {rxQueue.length} prescription medicines have reminders set up!
+                  </div>
+                ) : null}
+
                 <div className="flex items-center justify-center gap-3">
                   <button onClick={() => { resetForm(); setView("list") }} className={ghostCls}>View all reminders</button>
-                  <button onClick={resetForm} className={primaryCls}><PlusIcon size={13} color="white" /> Add another</button>
+                  {rxQueue.length === 0 && (
+                    <button onClick={resetForm} className={primaryCls}><PlusIcon size={13} color="white" /> Add another</button>
+                  )}
                 </div>
               </div>
             ) : (

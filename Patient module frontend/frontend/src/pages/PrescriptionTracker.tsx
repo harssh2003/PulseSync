@@ -25,6 +25,12 @@ interface MedicineAnalysis {
 
 interface PrescriptionTrackerProps {
   onNavigate: (page: string) => void
+  /** Blob of a doctor-uploaded prescription to auto-scan on mount */
+  autoPrescriptionBlob?: Blob
+  /** MIME type of the blob */
+  autoPrescriptionMime?: string
+  /** Called after an auto-scan (or any scan) completes with the list of analysed medicine names */
+  onAnalysisComplete?: (medicineNames: string[]) => void
 }
 
 // ─── Comparison panel ────────────────────────────────────────────────────────
@@ -143,7 +149,7 @@ function ComparisonPanel({ medA, medB, onClose }: { medA: MedicineAnalysis; medB
 
 // ─── Main tracker ─────────────────────────────────────────────────────────────
 
-export default function PrescriptionTracker({ onNavigate }: PrescriptionTrackerProps) {
+export default function PrescriptionTracker({ onNavigate, autoPrescriptionBlob, autoPrescriptionMime = "image/jpeg", onAnalysisComplete }: PrescriptionTrackerProps) {
   const [medicineInput, setMedicineInput] = useState("")
   const [medicines, setMedicines] = useState<MedicineAnalysis[]>([])
   const [loading, setLoading] = useState(false)
@@ -159,6 +165,21 @@ export default function PrescriptionTracker({ onNavigate }: PrescriptionTrackerP
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchPrescriptions() }, [])
+
+  // ── Auto-scan when a doctor-uploaded prescription blob is provided ──────
+  useEffect(() => {
+    if (!autoPrescriptionBlob) return
+    // Convert Blob → File so scanPrescriptionImage can use it
+    const ext = autoPrescriptionMime.includes("pdf") ? "pdf"
+      : autoPrescriptionMime.includes("png") ? "png"
+      : autoPrescriptionMime.includes("webp") ? "webp"
+      : "jpg"
+    const file = new File([autoPrescriptionBlob], `doctor-prescription.${ext}`, { type: autoPrescriptionMime })
+    // Small delay so the page renders first
+    const t = setTimeout(() => scanPrescriptionImage(file), 400)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrescriptionBlob])
 
   const fetchPrescriptions = async () => {
     try {
@@ -396,6 +417,13 @@ setMedicines((prev) => {
         // Refresh from DB after enough time for all sequential saves to complete
         const saveDelayMs = found.length * 1500 + 3000
         setTimeout(() => fetchPrescriptions(), saveDelayMs)
+
+        // ── Prescription pipeline: fire callback to auto-redirect to reminders ──
+        if (onAnalysisComplete && newMeds.length > 0) {
+          const analysedNames = newMeds.map((m) => m.medicineName).filter(Boolean)
+          // Wait long enough for the user to see the analysis results, then hand off
+          setTimeout(() => onAnalysisComplete(analysedNames), saveDelayMs + 1000)
+        }
       }
 
     } catch (err: any) {
@@ -549,6 +577,11 @@ setMedicines((prev) => {
             {successMessage && (
               <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, fontSize: 13, color: "#16a34a" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>{successMessage}
+                {onAnalysisComplete && (
+                  <span style={{ marginLeft: "auto", fontSize: 12, color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>
+                    ⏳ Setting up reminders…
+                  </span>
+                )}
               </div>
             )}
             {analyzingMedicine && loading && (

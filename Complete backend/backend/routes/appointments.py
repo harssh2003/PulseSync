@@ -150,10 +150,85 @@ def _enrich_appointment(apt: dict, db) -> dict:
         'reason':           apt.get('reason', ''),
         'notes':            apt.get('notes', ''),
         'status':           apt.get('status', 'pending'),
+        'urgency_score':    apt.get('urgency_score', 1),
+        # reschedule info
+        'reschedule_reason':  apt.get('reschedule_reason', ''),
+        'reschedule_history': apt.get('reschedule_history', []),
         # timestamps — safe_str handles datetime objects too
         'created_at':       safe_str(apt.get('created_at', '')),
         'updated_at':       safe_str(apt.get('updated_at', '')),
     }
+
+def auto_reschedule_appointment(db, appointment):
+    """
+    Finds the next available slot for the same doctor and reschedules the appointment.
+    """
+    try:
+        doctor_id = appointment['doctor_id']
+        today = datetime.utcnow().date().isoformat()
+
+        # Find future availabilities for this doctor
+        avail_col = db['availability']
+        future_avail = list(avail_col.find({
+            "doctor_id": doctor_id,
+            "status": "available",
+            "date": {"$gte": today}
+        }).sort("date", 1))
+
+        new_slot = None
+        new_date = None
+        new_doc_id = None
+        
+        for doc in future_avail:
+            # don't reschedule onto the exact same date if we're cancelling the whole date
+            for slot in doc.get('available_slots', []):
+                if slot.get('available', True):
+                    new_slot = slot['time']
+                    new_date = doc['date']
+                    new_doc_id = doc['_id']
+                    break
+            if new_slot:
+                break
+                
+        if new_slot and new_date:
+            db['appointments'].update_one(
+                {'_id': appointment['_id']},
+                {'$set': {
+                    'appointment_date': new_date,
+                    'appointment_time': new_slot,
+                    'status': 'pending',
+                    'updated_at': datetime.utcnow()
+                }}
+            )
+            db['availability'].update_one(
+                {'_id': new_doc_id, 'available_slots.time': new_slot},
+                {'$set': {'available_slots.$.available': False, 'updated_at': datetime.utcnow()}}
+            )
+            push_notification(safe_str(appointment['patient_id']), {
+                'appointment_id': safe_str(appointment['_id']),
+                'message': f"Your appointment was automatically rescheduled to {new_date} at {new_slot} due to doctor unavailability. It is currently pending confirmation.",
+                'type': 'warning'
+            })
+            return True
+        else:
+            db['appointments'].update_one(
+                {'_id': appointment['_id']},
+                {'$set': {
+                    'status': 'cancelled',
+                    'cancel_reason': 'Doctor unavailable and no alternative slots found',
+                    'updated_at': datetime.utcnow()
+                }}
+            )
+            push_notification(safe_str(appointment['patient_id']), {
+                'appointment_id': safe_str(appointment['_id']),
+                'message': f"Your appointment on {appointment.get('appointment_date')} was cancelled as the doctor became unavailable and no alternative slots were found.",
+                'type': 'error'
+            })
+            return False
+            
+    except Exception as e:
+        print(f"[auto_reschedule] error: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +259,7 @@ def create_appointment():
             appointment_time = data['appointment_time'],
             reason           = data['reason'],
             notes            = data.get('notes', ''),
+            urgency_score    = data.get('urgency_score', 1),
         )
 
         # Mark that slot as booked
@@ -303,6 +379,8 @@ def get_hospital_appointments():
                 upcoming.append(apt)
             else:
                 past.append(apt)
+
+        today_appointments.sort(key=lambda x: (-x.get('urgency_score', 1), x.get('appointment_time', '23:59')))
 
         return jsonify({
             'today':       today_appointments,
@@ -457,6 +535,18 @@ def toggle_availability(slot_id):
             {'_id': ObjectId(slot_id)},
             {'$set': {'status': new_status, 'updated_at': datetime.utcnow()}}
         )
+
+        if new_status == 'unavailable':
+            doctor_id = slot.get('doctor_id')
+            date = slot.get('date')
+            affected = list(db['appointments'].find({
+                'doctor_id': doctor_id,
+                'appointment_date': date,
+                'status': {'$in': ['pending', 'confirmed']}
+            }))
+            for apt in affected:
+                auto_reschedule_appointment(db, apt)
+
         return jsonify({'message': f'Availability toggled to {new_status}', 'slot_id': slot_id, 'status': new_status}), 200
     except Exception as e:
         return jsonify({'error': f'Error toggling availability: {str(e)}'}), 500
@@ -517,6 +607,16 @@ def cancel_appointment(appointment_id):
         if not apt:
             return jsonify({'error': 'Appointment not found'}), 404
 
+        is_hospital  = request.user_role == 'hospital'
+        
+        if is_hospital:
+            rescheduled = auto_reschedule_appointment(db, apt)
+            if rescheduled:
+                return jsonify({'message': 'Appointment automatically rescheduled', 'appointment_id': appointment_id}), 200
+            # If not rescheduled, it was cancelled by auto_reschedule, we can just return
+            return jsonify({'message': 'Appointment cancelled (no alternative slots found)', 'appointment_id': appointment_id}), 200
+
+        # Patient cancellation flow
         appointments.update_one(
             {'_id': ObjectId(appointment_id)},
             {'$set': {
@@ -527,13 +627,9 @@ def cancel_appointment(appointment_id):
             }}
         )
 
-        is_hospital  = request.user_role == 'hospital'
         # safe_str handles ObjectId fields stored in patient_id / doctor_id
-        recipient_id = safe_str(apt['patient_id']) if is_hospital else safe_str(apt.get('doctor_id', ''))
+        recipient_id = safe_str(apt.get('doctor_id', ''))
         msg          = (
-            f"Your appointment on {apt.get('appointment_date')} at {apt.get('appointment_time')} "
-            f"has been cancelled. Reason: {cancel_reason}"
-        ) if is_hospital else (
             f"Appointment on {apt.get('appointment_date')} at {apt.get('appointment_time')} "
             f"was cancelled by the patient. Reason: {cancel_reason}"
         )
@@ -557,6 +653,147 @@ def cancel_appointment(appointment_id):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': f'Error cancelling appointment: {str(e)}'}), 500
+
+
+@appointments_bp.route('/<appointment_id>', methods=['DELETE'])
+@token_required
+def delete_appointment(appointment_id):
+    """Delete a cancelled appointment — Patient only."""
+    try:
+        if request.user_role != 'patient':
+            return jsonify({'error': 'Only patients can delete their appointments'}), 403
+
+        db  = get_db()
+        apt = db['appointments'].find_one({'_id': ObjectId(appointment_id)})
+        if not apt:
+            return jsonify({'error': 'Appointment not found'}), 404
+
+        if safe_str(apt.get('patient_id', '')) != request.user_id:
+            return jsonify({'error': 'Unauthorized — this is not your appointment'}), 403
+
+        if apt.get('status') != 'cancelled':
+            return jsonify({'error': 'Only cancelled appointments can be deleted'}), 400
+
+        db['appointments'].delete_one({'_id': ObjectId(appointment_id)})
+        return jsonify({'message': 'Appointment deleted successfully', 'appointment_id': appointment_id}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Error deleting appointment: {str(e)}'}), 500
+
+@appointments_bp.route('/<appointment_id>/reschedule', methods=['PUT'])
+@token_required
+def reschedule_appointment(appointment_id):
+    """Patient reschedules an existing appointment to a new date/time."""
+    try:
+        if request.user_role != 'patient':
+            return jsonify({'error': 'Only patients can reschedule their appointments'}), 403
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        new_date          = data.get('new_date')
+        new_time          = data.get('new_time')
+        reschedule_reason = data.get('reschedule_reason', '').strip()
+
+        if not new_date or not new_time:
+            return jsonify({'error': 'new_date and new_time are required'}), 400
+        if not reschedule_reason:
+            return jsonify({'error': 'reschedule_reason is required'}), 400
+
+        db  = get_db()
+        apt = db['appointments'].find_one({'_id': ObjectId(appointment_id)})
+        if not apt:
+            return jsonify({'error': 'Appointment not found'}), 404
+
+        # Ownership check
+        if safe_str(apt.get('patient_id', '')) != request.user_id:
+            return jsonify({'error': 'Unauthorized — this is not your appointment'}), 403
+
+        # Only pending / confirmed appointments may be rescheduled
+        if apt.get('status') not in ('pending', 'confirmed'):
+            return jsonify({'error': f"Cannot reschedule an appointment with status '{apt.get('status')}'"}), 400
+
+        old_date   = apt.get('appointment_date', '')
+        old_time   = apt.get('appointment_time', '')
+        doctor_id  = apt.get('doctor_id', '')
+
+        # ── Free the old slot ───────────────────────────────────────────────
+        try:
+            db['availability'].update_one(
+                {
+                    'doctor_id': safe_str(doctor_id),
+                    'date':      old_date,
+                    'available_slots.time': old_time,
+                },
+                {'$set': {'available_slots.$.available': True, 'updated_at': datetime.utcnow()}}
+            )
+        except Exception as slot_err:
+            print(f"[reschedule] Warning: Could not free old slot: {slot_err}")
+
+        # ── Book the new slot ───────────────────────────────────────────────
+        try:
+            db['availability'].update_one(
+                {
+                    'doctor_id': safe_str(doctor_id),
+                    'date':      new_date,
+                    'available_slots': {
+                        '$elemMatch': {'time': new_time, 'available': True}
+                    },
+                },
+                {'$set': {'available_slots.$.available': False, 'updated_at': datetime.utcnow()}}
+            )
+        except Exception as slot_err:
+            print(f"[reschedule] Warning: Could not book new slot: {slot_err}")
+
+        # ── Update the appointment document ─────────────────────────────────
+        updated = AppointmentModel.reschedule_appointment(
+            db, appointment_id, new_date, new_time, reschedule_reason
+        )
+        if not updated:
+            return jsonify({'error': 'Failed to reschedule appointment'}), 500
+
+        # ── Notify the hospital / doctor ────────────────────────────────────
+        try:
+            users   = db['users']
+            patient = users.find_one({'_id': ObjectId(request.user_id)})
+            patient_name = patient.get('full_name', 'Patient') if patient else 'Patient'
+
+            recipient_id = safe_str(doctor_id)
+            msg = (
+                f"{patient_name} rescheduled their appointment from "
+                f"{old_date} at {old_time} → {new_date} at {new_time}. "
+                f"Reason: {reschedule_reason}"
+            )
+
+            if recipient_id:
+                db['notifications'].insert_one({
+                    'user_id':        recipient_id,
+                    'appointment_id': appointment_id,
+                    'message':        msg,
+                    'type':           'warning',
+                    'read':           False,
+                    'cleared':        False,
+                    'created_at':     datetime.utcnow(),
+                    'updated_at':     datetime.utcnow(),
+                })
+                push_notification(recipient_id, {
+                    'appointment_id': appointment_id,
+                    'message': msg,
+                    'type': 'warning',
+                })
+        except Exception as notif_err:
+            print(f"[reschedule] Warning: Could not send notification: {notif_err}")
+
+        enriched = _enrich_appointment(db['appointments'].find_one({'_id': ObjectId(appointment_id)}), db)
+        return jsonify({
+            'message':     'Appointment rescheduled successfully',
+            'appointment': enriched,
+        }), 200
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': f'Error rescheduling appointment: {str(e)}'}), 500
 
 
 # ---------------------------------------------------------------------------

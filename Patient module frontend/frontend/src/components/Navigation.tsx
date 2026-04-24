@@ -1,24 +1,25 @@
 "use client"
 
 import { useState } from "react"
-import  NotificationBell  from "./NotificationBell"
+import NotificationBell from "./NotificationBell"
 
 interface NavigationProps {
   currentPage: string
   onNavigate: (page: string) => void
+  onAnalyzePrescription?: (prescriptionId: string) => void
 }
 
-export default function Navigation({ currentPage, onNavigate }: NavigationProps) {
+export default function Navigation({ currentPage, onNavigate, onAnalyzePrescription }: NavigationProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const navItems = [
     { id: "home", label: "Home" },
     { id: "search", label: "Find Hospitals" },
     { id: "availability", label: "Availability" },
-    { id: "booking", label: "My Appointments"},
+    { id: "booking", label: "My Appointments" },
     { id: "ambulance", label: "Ambulance" },
     { id: "prescriptions", label: "Prescriptions" },
-    // { id: "history", label: "Medical History", icon: "" },
+    { id: "mydiagnostics", label: "Diagnostics" },
     { id: "reminders", label: "Reminders" },
   ]
 
@@ -48,11 +49,10 @@ export default function Navigation({ currentPage, onNavigate }: NavigationProps)
               <li key={item.id}>
                 <button
                   onClick={() => onNavigate(item.id)}
-                  className={`px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer transition-all duration-300 flex items-center gap-2 ${
-                    currentPage === item.id
-                      ? "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg scale-105"
-                      : "text-slate-700 hover:bg-sky-50 hover:text-sky-600"
-                  }`}
+                  className={`px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer transition-all duration-300 flex items-center gap-2 ${currentPage === item.id
+                    ? "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg scale-105"
+                    : "text-slate-700 hover:bg-sky-50 hover:text-sky-600"
+                    }`}
                 >
                   {/* <span className="text-lg">{item.icon}</span> */}
                   <span>{item.label}</span>
@@ -63,7 +63,7 @@ export default function Navigation({ currentPage, onNavigate }: NavigationProps)
 
           {/* Right Side - Profile Icon, Notifications and Mobile Menu Button */}
           <div className="flex items-center gap-4">
-            <NotificationBell />
+            <NotificationBell onAnalyzePrescription={onAnalyzePrescription} />
 
             {/* Profile Icon with red dot for incomplete profile */}
             <button
@@ -99,9 +99,8 @@ export default function Navigation({ currentPage, onNavigate }: NavigationProps)
 
         {/* Mobile Menu */}
         <div
-          className={`lg:hidden overflow-hidden transition-all duration-300 ${
-            mobileMenuOpen ? "max-h-[500px] pb-5" : "max-h-0"
-          }`}
+          className={`lg:hidden overflow-hidden transition-all duration-300 ${mobileMenuOpen ? "max-h-[500px] pb-5" : "max-h-0"
+            }`}
         >
           <ul className="flex flex-col gap-2">
             {navItems.map((item) => (
@@ -111,11 +110,10 @@ export default function Navigation({ currentPage, onNavigate }: NavigationProps)
                     onNavigate(item.id)
                     setMobileMenuOpen(false)
                   }}
-                  className={`w-full px-5 py-4 rounded-xl text-sm font-semibold cursor-pointer transition-all duration-300 flex items-center gap-3 ${
-                    currentPage === item.id
-                      ? "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg"
-                      : "text-slate-700 hover:bg-sky-50 hover:text-sky-600"
-                  }`}
+                  className={`w-full px-5 py-4 rounded-xl text-sm font-semibold cursor-pointer transition-all duration-300 flex items-center gap-3 ${currentPage === item.id
+                    ? "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg"
+                    : "text-slate-700 hover:bg-sky-50 hover:text-sky-600"
+                    }`}
                 >
                   {/* <span className="text-xl">{item.icon}</span> */}
                   <span>{item.label}</span>

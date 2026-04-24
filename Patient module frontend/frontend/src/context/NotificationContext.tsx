@@ -7,9 +7,12 @@ import React, {
 export interface Notification {
   id: string
   appointmentId?: string
+  prescriptionId?: string
+  doctorName?: string
+  hospitalName?: string
   title: string
   message: string
-  type: "info" | "success" | "warning" | "error"
+  type: "info" | "success" | "warning" | "error" | "prescription_uploaded"
   read: boolean
   timestamp: string
 }
@@ -31,10 +34,11 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000"
 
 function typeToTitle(type: string): string {
   switch (type) {
-    case "success": return "Appointment Confirmed"
-    case "warning": return "Appointment Cancelled"
-    case "error":   return "Action Required"
-    default:        return "New Notification"
+    case "success":               return "Appointment Confirmed"
+    case "warning":               return "Appointment Cancelled"
+    case "error":                 return "Action Required"
+    case "prescription_uploaded": return "💊 Prescription Ready"
+    default:                      return "New Notification"
   }
 }
 
@@ -53,11 +57,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const addOrUpdate = useCallback((raw: any) => {
     const notif: Notification = {
       id: raw.id,
-      appointmentId: raw.appointment_id || undefined,
-      title: typeToTitle(raw.type),
+      appointmentId:  raw.appointment_id || undefined,
+      prescriptionId: raw.prescription_id || undefined,
+      doctorName:     raw.doctor_name || undefined,
+      hospitalName:   raw.hospital_name || undefined,
+      title:   typeToTitle(raw.type),
       message: raw.message,
-      type: raw.type ?? "info",
-      read: raw.read ?? false,
+      type:    raw.type ?? "info",
+      read:    raw.read ?? false,
       timestamp: raw.created_at ?? new Date().toISOString(),
     }
     setNotifications(prev => {

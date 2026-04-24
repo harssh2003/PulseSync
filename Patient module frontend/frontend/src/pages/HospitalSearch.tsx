@@ -32,29 +32,29 @@ export interface Hospital {
 
 // ── Visit reason → Places API keyword + service labels shown on card ──
 const VISIT_REASONS = [
-  { id: "all",        label: "All",             icon: "🏥", keyword: "hospital clinic",           services: [] },
-  { id: "emergency",  label: "Emergency",        icon: "🚨", keyword: "emergency hospital",        services: ["Emergency"] },
-  { id: "general",    label: "General Checkup",  icon: "🩺", keyword: "general physician clinic",  services: ["General Practice"] },
-  { id: "specialist", label: "Specialist",       icon: "🔬", keyword: "specialist hospital",       services: ["Specialist"] },
-  { id: "diagnostic", label: "Diagnostics",      icon: "🧪", keyword: "diagnostic lab pathology",  services: ["Diagnostics", "Radiology"] },
-  { id: "mental",     label: "Mental Health",    icon: "🧠", keyword: "psychiatrist mental health", services: ["Psychiatry"] },
-  { id: "dental",     label: "Dental",           icon: "🦷", keyword: "dental clinic dentist",     services: ["Dental"] },
-  { id: "maternity",  label: "Maternity",        icon: "🤰", keyword: "maternity gynecologist",    services: ["Maternity", "Gynecology"] },
+  { id: "all", label: "All", icon: "🏥", keyword: "hospital clinic", services: [] },
+  { id: "emergency", label: "Emergency", icon: "🚨", keyword: "emergency hospital", services: ["Emergency"] },
+  { id: "general", label: "General Checkup", icon: "🩺", keyword: "general physician clinic", services: ["General Practice"] },
+  { id: "specialist", label: "Specialist", icon: "🔬", keyword: "specialist hospital", services: ["Specialist"] },
+  { id: "diagnostic", label: "Diagnostics", icon: "🧪", keyword: "diagnostic lab pathology", services: ["Diagnostics", "Radiology"] },
+  { id: "mental", label: "Mental Health", icon: "🧠", keyword: "psychiatrist mental health", services: ["Psychiatry"] },
+  { id: "dental", label: "Dental", icon: "🦷", keyword: "dental clinic dentist", services: ["Dental"] },
+  { id: "maternity", label: "Maternity", icon: "🤰", keyword: "maternity gynecologist", services: ["Maternity", "Gynecology"] },
 ]
 
 const DISTANCE_OPTIONS = [
-  { id: "all", label: "Any",         maxKm: Infinity, radiusM: 10000 },
-  { id: "2",   label: "Within 2 km", maxKm: 2,        radiusM: 2000  },
-  { id: "5",   label: "Within 5 km", maxKm: 5,        radiusM: 5000  },
-  { id: "10",  label: "Within 10 km",maxKm: 10,       radiusM: 10000 },
-  { id: "20",  label: "Within 20 km",maxKm: 20,       radiusM: 20000 },
+  { id: "all", label: "Any", maxKm: Infinity, radiusM: 10000 },
+  { id: "2", label: "Within 2 km", maxKm: 2, radiusM: 2000 },
+  { id: "5", label: "Within 5 km", maxKm: 5, radiusM: 5000 },
+  { id: "10", label: "Within 10 km", maxKm: 10, radiusM: 10000 },
+  { id: "20", label: "Within 20 km", maxKm: 20, radiusM: 20000 },
 ]
 
 const FACILITY_TYPES = [
-  { id: "all",      label: "All",       icon: "🏥" },
+  { id: "all", label: "All", icon: "🏥" },
   { id: "hospital", label: "Hospitals", icon: "🏨" },
-  { id: "clinic",   label: "Clinics",   icon: "🏪" },
-  { id: "doctor",   label: "Doctors",   icon: "👨‍⚕️" },
+  { id: "clinic", label: "Clinics", icon: "🏪" },
+  { id: "doctor", label: "Doctors", icon: "👨‍⚕️" },
 ]
 
 // ── Haversine distance in km ──
@@ -65,8 +65,8 @@ function calcDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
@@ -78,12 +78,12 @@ function deriveFacilityType(types: string[]): Hospital["type"] {
 
 function deriveServices(types: string[], reasonServices: string[]): string[] {
   const derived: string[] = []
-  if (types.includes("hospital"))        derived.push("Hospital")
-  if (types.includes("doctor"))          derived.push("General Practice")
-  if (types.includes("dentist"))         derived.push("Dental")
-  if (types.includes("pharmacy"))        derived.push("Pharmacy")
+  if (types.includes("hospital")) derived.push("Hospital")
+  if (types.includes("doctor")) derived.push("General Practice")
+  if (types.includes("dentist")) derived.push("Dental")
+  if (types.includes("pharmacy")) derived.push("Pharmacy")
   if (types.includes("physiotherapist")) derived.push("Physiotherapy")
-  if (reasonServices.length > 0)         derived.push(...reasonServices)
+  if (reasonServices.length > 0) derived.push(...reasonServices)
   return [...new Set(derived.length ? derived : ["Healthcare"])]
 }
 
@@ -105,40 +105,41 @@ async function fetchNearbyPlaces(
     const dist = calcDistance(lat, lng, place.geometry.location.lat, place.geometry.location.lng)
     const photo = place.photos?.[0]?.photo_reference
     return {
-      id:          place.place_id,
-      placeId:     place.place_id,
-      name:        place.name,
-      location:    place.vicinity,
-      distanceKm:  parseFloat(dist.toFixed(1)),
-      rating:      place.rating ?? 0,
-      reviews:     place.user_ratings_total ?? 0,
-      services:    deriveServices(place.types ?? [], reasonServices),
-      beds:        -1,
-      doctors:     -1,
-      image:       photo ? `${API_BASE_URL}/api/places/photo?ref=${photo}` : "/placeholder-hospital.png",
-      type:        deriveFacilityType(place.types ?? []),
-      openNow:     place.opening_hours?.open_now ?? null,
-      lat:         place.geometry.location.lat,
-      lng:         place.geometry.location.lng,
+      id: place.place_id,
+      placeId: place.place_id,
+      name: place.name,
+      location: place.vicinity,
+      distanceKm: parseFloat(dist.toFixed(1)),
+      rating: place.rating ?? 0,
+      reviews: place.user_ratings_total ?? 0,
+      services: deriveServices(place.types ?? [], reasonServices),
+      beds: -1,
+      doctors: -1,
+      image: photo ? `${API_BASE_URL}/api/places/photo?ref=${photo}` : "/placeholder-hospital.png",
+      type: deriveFacilityType(place.types ?? []),
+      openNow: place.opening_hours?.open_now ?? null,
+      lat: place.geometry.location.lat,
+      lng: place.geometry.location.lng,
     }
   })
 }
 
 // ─────────────────────────────────────────────
 export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
-  const [searchTerm, setSearchTerm]             = useState("")
-  const [selectedReason, setSelectedReason]     = useState("all")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedReason, setSelectedReason] = useState("all")
   const [selectedDistance, setSelectedDistance] = useState("all")
-  const [selectedType, setSelectedType]         = useState("all")
-  const [isVisible, setIsVisible]               = useState(false)
+  const [selectedType, setSelectedType] = useState("all")
+  const [isVisible, setIsVisible] = useState(false)
 
-  const [userLat, setUserLat]       = useState<number | null>(null)
-  const [userLng, setUserLng]       = useState<number | null>(null)
-  const [userCity, setUserCity]     = useState<string>("")
-  const [hospitals, setHospitals]   = useState<Hospital[]>([])
-  const [loading, setLoading]       = useState(false)
+  const [userLat, setUserLat] = useState<number | null>(null)
+  const [userLng, setUserLng] = useState<number | null>(null)
+  const [userCity, setUserCity] = useState<string>("")
+  const [hospitals, setHospitals] = useState<Hospital[]>([])
+  const [loading, setLoading] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
-  const [apiError, setApiError]     = useState<string | null>(null)
+  const [apiError, setApiError] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
 
   useEffect(() => { setIsVisible(true) }, [])
 
@@ -178,7 +179,7 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
   // Re-fetch whenever location or reason/distance changes
   useEffect(() => {
     if (userLat === null || userLng === null) return
-    const reason  = VISIT_REASONS.find((r) => r.id === selectedReason) ?? VISIT_REASONS[0]
+    const reason = VISIT_REASONS.find((r) => r.id === selectedReason) ?? VISIT_REASONS[0]
     const distOpt = DISTANCE_OPTIONS.find((d) => d.id === selectedDistance) ?? DISTANCE_OPTIONS[0]
     setLoading(true)
     setApiError(null)
@@ -193,17 +194,19 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
 
   const maxKm = DISTANCE_OPTIONS.find((d) => d.id === selectedDistance)?.maxKm ?? Infinity
 
-  const filteredHospitals = hospitals.filter((h) => {
-    const matchesSearch =
-      !searchTerm ||
-      h.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      h.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      h.services.some((s) => s.toLowerCase().includes(searchTerm.toLowerCase()))
-    return matchesSearch && (selectedType === "all" || h.type === selectedType) && h.distanceKm <= maxKm
-  })
+  const filteredHospitals = hospitals
+    .filter((h) => {
+      const matchesSearch =
+        !searchTerm ||
+        h.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        h.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        h.services.some((s) => s.toLowerCase().includes(searchTerm.toLowerCase()))
+      return matchesSearch && (selectedType === "all" || h.type === selectedType) && h.distanceKm <= maxKm
+    })
+    .sort((a, b) => sortOrder === "asc" ? a.distanceKm - b.distanceKm : b.distanceKm - a.distanceKm)
 
   const hasActiveFilters = !!searchTerm || selectedReason !== "all" || selectedDistance !== "all" || selectedType !== "all"
-  const clearFilters = () => { setSearchTerm(""); setSelectedReason("all"); setSelectedDistance("all"); setSelectedType("all") }
+  const clearFilters = () => { setSearchTerm(""); setSelectedReason("all"); setSelectedDistance("all"); setSelectedType("all"); setSortOrder("asc") }
 
   return (
     <div
@@ -284,11 +287,10 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
                 <button
                   key={r.id}
                   onClick={() => setSelectedReason(r.id)}
-                  className={`reason-pill flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border-2 text-sm font-semibold cursor-pointer ${
-                    selectedReason === r.id
+                  className={`reason-pill flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border-2 text-sm font-semibold cursor-pointer ${selectedReason === r.id
                       ? "active bg-sky-500 border-sky-500 text-white shadow-lg"
                       : "bg-white border-slate-200 text-slate-600 hover:border-sky-300"
-                  }`}
+                    }`}
                 >
                   <span>{r.icon}</span>{r.label}
                 </button>
@@ -307,11 +309,10 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
                 <button
                   key={opt.id}
                   onClick={() => setSelectedDistance(opt.id)}
-                  className={`dist-btn px-5 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer ${
-                    selectedDistance === opt.id
+                  className={`dist-btn px-5 py-2.5 rounded-xl border-2 text-sm font-semibold cursor-pointer ${selectedDistance === opt.id
                       ? "active bg-sky-500 border-sky-500 text-white"
                       : "bg-white border-slate-200 text-slate-600 hover:border-sky-300"
-                  }`}
+                    }`}
                 >
                   {opt.label}
                 </button>
@@ -337,9 +338,8 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
                   <button
                     key={opt.id}
                     onClick={() => setSelectedType(opt.id)}
-                    className={`facility-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                      selectedType === opt.id ? "active bg-white text-sky-600 shadow" : "text-slate-500 hover:text-slate-700"
-                    }`}
+                    className={`facility-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${selectedType === opt.id ? "active bg-white text-sky-600 shadow" : "text-slate-500 hover:text-slate-700"
+                      }`}
                   >
                     <span>{opt.icon}</span>{opt.label}
                   </button>
@@ -353,11 +353,23 @@ export default function HospitalSearch({ onNavigate }: HospitalSearchProps) {
                   : <><span className="text-sky-600 font-bold text-base">{filteredHospitals.length}</span> result{filteredHospitals.length !== 1 ? "s" : ""} found</>
                 }
               </p>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="text-xs text-sky-500 hover:text-sky-700 font-semibold transition-colors">
-                  Clear all ✕
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {!loading && filteredHospitals.length > 1 && (
+                  <button
+                    onClick={() => setSortOrder((o) => o === "asc" ? "desc" : "asc")}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1.5 rounded-lg transition-all"
+                    title={sortOrder === "asc" ? "Showing: Nearest first" : "Showing: Farthest first"}
+                  >
+                    {sortOrder === "asc" ? "↑" : "↓"}
+                    {sortOrder === "asc" ? "Nearest first" : "Farthest first"}
+                  </button>
+                )}
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} className="text-xs text-sky-500 hover:text-sky-700 font-semibold transition-colors">
+                    Clear all ✕
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

@@ -51,6 +51,11 @@ def push_notification(user_id: str, notification: dict):
     """
     db = get_db()
     
+    # Use IST for timestamps (Asia/Kolkata = UTC+5:30)
+    from datetime import timedelta, timezone as tz
+    IST = tz(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+
     doc = {
         'user_id': str(user_id),
         'appointment_id': notification.get('appointment_id'),
@@ -58,8 +63,8 @@ def push_notification(user_id: str, notification: dict):
         'type': notification.get('type', 'info'),   # info | success | warning | error
         'read': False,
         'cleared': False,
-        'created_at': datetime.utcnow(),
-        'updated_at': datetime.utcnow(),
+        'created_at': now_ist,
+        'updated_at': now_ist,
     }
     result = db['notifications'].insert_one(doc)
     doc['_id'] = result.inserted_id
@@ -188,6 +193,7 @@ def get_notifications():
 @notifications_bp.route('/<notification_id>/read', methods=['PUT'])
 @token_required
 def mark_read(notification_id):
+    print("Notification ID:", notification_id)
     db = get_db()
     result = db['notifications'].update_one(
         {'_id': ObjectId(notification_id), 'user_id': str(request.user_id)},
